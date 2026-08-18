@@ -1,7 +1,7 @@
 {
   "name": "Chaoli Helper",
   "description": "使用已登录的超理论坛账号，在弹出窗口中查看通知",
-  "version": "1.0",
+  "version": "0.1.0",
   "manifest_version": 3,
   "action": {
     "default_popup": "index.html",
@@ -17,6 +17,8 @@
   ],
   "permissions": [
     "scripting",
-    "tabs"
+    "tabs",
+    "cookies",
+    "declarativeNetRequestWithHostAccess"
   ]
 }

@@ -148,6 +148,9 @@ async function loadNotifications() {
     if (result.error === "NO_TAB") {
       throw new Error("NO_TAB");
     }
+    if (result.error === "LOGIN") {
+      throw new Error("LOGIN");
+    }
     if (!result.ok) {
       throw new Error(result.status ? `HTTP_${result.status}` : result.error || "FETCH_FAILED");
     }
@@ -172,7 +175,7 @@ async function loadNotifications() {
   } catch (error) {
     const code = error && error.message;
     if (code === "NO_TAB") {
-      showStatus("请先打开并登录 chaoli.club 标签页，保持该页面开着，然后点击刷新。", "info");
+      showStatus("无法读取通知。请先登录一次 chaoli.club，之后关闭标签页也可以继续查看。", "info");
       contentEl.innerHTML = `
         <p class="empty">
           <a href="https://chaoli.club/" target="_blank" rel="noopener noreferrer">打开超理论坛</a>
@@ -181,7 +184,7 @@ async function loadNotifications() {
       return;
     }
     if (code === "LOGIN") {
-      showStatus("当前 chaoli.club 标签页未登录。请先登录，然后点击刷新。");
+      showStatus("未检测到登录状态。请先在浏览器中登录 chaoli.club，登录后关闭标签页也可以继续查看通知。");
       contentEl.innerHTML = `
         <p class="empty">
           <a href="https://chaoli.club/" target="_blank" rel="noopener noreferrer">前往登录超理论坛</a>

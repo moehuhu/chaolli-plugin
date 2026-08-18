@@ -1,4 +1,6 @@
 const NOTIFICATIONS_PATH = "/index.php/?p=settings/notifications.view/1";
+const NOTIFICATIONS_URL = `https://chaoli.club${NOTIFICATIONS_PATH}`;
+const COOKIE_RULE_ID = 1001;
 
 function waitForTabComplete(tabId, timeoutMs = 20000) {
   return new Promise((resolve, reject) => {
@@ -22,9 +24,12 @@ function waitForTabComplete(tabId, timeoutMs = 20000) {
     };
 
     chrome.tabs.onUpdated.addListener(onUpdated);
-    chrome.tabs.get(tabId).then((tab) => {
-      if (tab.status === "complete") finish();
-    }).catch((error) => finish(error));
+    chrome.tabs
+      .get(tabId)
+      .then((tab) => {
+        if (tab.status === "complete") finish();
+      })
+      .catch((error) => finish(error));
   });
 }
 
@@ -33,6 +38,17 @@ async function findChaoliTab() {
     url: ["https://chaoli.club/*", "https://www.chaoli.club/*"]
   });
   return tabs.find((tab) => tab.id && !tab.discarded) || tabs[0] || null;
+}
+
+function isUsableResult(result) {
+  const html = result?.html || "";
+  if (!result?.ok || !html.trim()) return false;
+  if (/sorry, you have been blocked/i.test(html)) return false;
+  if (/user\/login|user\/join/i.test(result.url || "")) return false;
+  if (/name=["']username["']/i.test(html) && /name=["']password["']/i.test(html)) {
+    return false;
+  }
+  return true;
 }
 
 async function fetchFromTab(tab) {
@@ -67,18 +83,109 @@ async function fetchFromTab(tab) {
   return injection.result;
 }
 
+async function buildCookieHeader() {
+  const groups = await Promise.all([
+    chrome.cookies.getAll({ url: "https://chaoli.club/" }),
+    chrome.cookies.getAll({ url: "https://www.chaoli.club/" }),
+    chrome.cookies.getAll({ domain: "chaoli.club" })
+  ]);
+  const cookies = new Map();
+  for (const cookie of groups.flat()) {
+    cookies.set(cookie.name, cookie.value);
+  }
+  return [...cookies.entries()]
+    .map(([name, value]) => `${name}=${value}`)
+    .join("; ");
+}
+
+async function fetchWithStoredCookies() {
+  const cookieHeader = await buildCookieHeader();
+  if (!cookieHeader) {
+    return { ok: false, status: 0, html: "", error: "LOGIN" };
+  }
+
+  await chrome.declarativeNetRequest.updateSessionRules({
+    removeRuleIds: [COOKIE_RULE_ID],
+    addRules: [
+      {
+        id: COOKIE_RULE_ID,
+        priority: 1,
+        action: {
+          type: "modifyHeaders",
+          requestHeaders: [
+            { header: "Cookie", operation: "set", value: cookieHeader },
+            { header: "Referer", operation: "set", value: "https://chaoli.club/" }
+          ]
+        },
+        condition: {
+          initiatorDomains: [chrome.runtime.id],
+          requestDomains: ["chaoli.club", "www.chaoli.club"],
+          resourceTypes: ["xmlhttprequest", "other"]
+        }
+      }
+    ]
+  });
+
+  try {
+    const response = await fetch(NOTIFICATIONS_URL, {
+      method: "GET",
+      credentials: "omit",
+      cache: "no-store",
+      redirect: "follow"
+    });
+    return {
+      ok: response.ok,
+      status: response.status,
+      url: response.url,
+      html: await response.text()
+    };
+  } finally {
+    await chrome.declarativeNetRequest.updateSessionRules({
+      removeRuleIds: [COOKIE_RULE_ID]
+    });
+  }
+}
+
+async function fetchFromHiddenTab() {
+  const tab = await chrome.tabs.create({
+    url: "https://chaoli.club/",
+    active: false
+  });
+  try {
+    await waitForTabComplete(tab.id);
+    return await fetchFromTab(tab);
+  } finally {
+    try {
+      if (tab.id) await chrome.tabs.remove(tab.id);
+    } catch {
+      // Tab may already be gone.
+    }
+  }
+}
+
+async function fetchNotifications() {
+  const existingTab = await findChaoliTab();
+  if (existingTab) {
+    const fromTab = await fetchFromTab(existingTab);
+    if (isUsableResult(fromTab)) return fromTab;
+  }
+
+  try {
+    const fromCookies = await fetchWithStoredCookies();
+    if (isUsableResult(fromCookies)) return fromCookies;
+  } catch {
+    // Fall through to a hidden tab.
+  }
+
+  return await fetchFromHiddenTab();
+}
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== "FETCH_NOTIFICATIONS") {
     return;
   }
 
-  (async () => {
-    const tab = await findChaoliTab();
-    if (!tab) {
-      return { ok: false, error: "NO_TAB" };
-    }
-    return await fetchFromTab(tab);
-  })()
+  fetchNotifications()
     .then(sendResponse)
     .catch((error) => {
       sendResponse({

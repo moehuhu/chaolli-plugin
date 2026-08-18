@@ -1,7 +1,7 @@
 {
   "name": "Chaoli Helper",
   "description": "使用已登录的超理论坛账号，在弹出窗口中查看通知",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "manifest_version": 3,
   "action": {
     "default_popup": "index.html",
@@ -12,8 +12,8 @@
     "service_worker": "background.js"
   },
   "host_permissions": [
-    "https://chaoli.club/*",
-    "https://www.chaoli.club/*"
+    "*://chaoli.club/*",
+    "*://*.chaoli.club/*"
   ],
   "permissions": [
     "scripting",

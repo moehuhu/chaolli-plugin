@@ -1,4 +1,5 @@
 const ORIGIN = "https://chaoli.club";
+const SITE_ORIGINS = ["*://chaoli.club/*", "*://*.chaoli.club/*"];
 
 const statusEl = document.getElementById("status");
 const contentEl = document.getElementById("content");
@@ -127,6 +128,16 @@ function enhanceNotifications() {
   }
 }
 
+async function ensureSiteAccess() {
+  try {
+    const already = await chrome.permissions.contains({ origins: SITE_ORIGINS });
+    if (already) return true;
+    return await chrome.permissions.request({ origins: SITE_ORIGINS });
+  } catch {
+    return false;
+  }
+}
+
 async function loadNotifications() {
   showStatus("");
   contentEl.innerHTML = `
@@ -138,6 +149,11 @@ async function loadNotifications() {
   `;
 
   try {
+    const allowed = await ensureSiteAccess();
+    if (!allowed) {
+      throw new Error("PERMISSION");
+    }
+
     const result = await chrome.runtime.sendMessage({
       type: "FETCH_NOTIFICATIONS"
     });
@@ -174,6 +190,15 @@ async function loadNotifications() {
     enhanceNotifications();
   } catch (error) {
     const code = error && error.message;
+    if (code === "PERMISSION") {
+      showStatus("需要允许扩展访问 chaoli.club，才能读取登录 cookie。");
+      contentEl.innerHTML = `
+        <p class="empty">
+          请点击扩展图标旁的「网站访问权限」，选择「在 chaoli.club 上」或「在所有网站上」。
+        </p>
+      `;
+      return;
+    }
     if (code === "NO_TAB") {
       showStatus("无法读取通知。请先登录一次 chaoli.club，之后关闭标签页也可以继续查看。", "info");
       contentEl.innerHTML = `

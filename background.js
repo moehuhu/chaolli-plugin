@@ -83,25 +83,50 @@ async function fetchFromTab(tab) {
   return injection.result;
 }
 
-async function buildCookieHeader() {
-  const groups = await Promise.all([
-    chrome.cookies.getAll({ url: "https://chaoli.club/" }),
-    chrome.cookies.getAll({ url: "https://www.chaoli.club/" }),
-    chrome.cookies.getAll({ domain: "chaoli.club" })
-  ]);
+async function getChaoliCookies() {
+  const stores = await chrome.cookies.getAllCookieStores();
+  const queries = [];
+
+  for (const store of stores) {
+    queries.push(
+      chrome.cookies.getAll({
+        domain: "chaoli.club",
+        storeId: store.id,
+        partitionKey: {}
+      }),
+      chrome.cookies.getAll({
+        domain: "chaoli.club",
+        storeId: store.id
+      })
+    );
+  }
+
+  queries.push(chrome.cookies.getAll({ domain: "chaoli.club", partitionKey: {} }));
+  queries.push(chrome.cookies.getAll({ domain: "chaoli.club" }));
+
+  const groups = await Promise.all(
+    queries.map((request) => request.catch(() => []))
+  );
   const cookies = new Map();
   for (const cookie of groups.flat()) {
-    cookies.set(cookie.name, cookie.value);
+    const partition = cookie.partitionKey?.topLevelSite || "";
+    cookies.set(
+      `${cookie.name}|${cookie.domain}|${cookie.path}|${partition}|${cookie.storeId}`,
+      cookie
+    );
   }
-  return [...cookies.entries()]
-    .map(([name, value]) => `${name}=${value}`)
-    .join("; ");
+  return [...cookies.values()];
+}
+
+async function buildCookieHeader() {
+  const cookies = await getChaoliCookies();
+  return cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join("; ");
 }
 
 async function fetchWithStoredCookies() {
   const cookieHeader = await buildCookieHeader();
   if (!cookieHeader) {
-    return { ok: false, status: 0, html: "", error: "LOGIN" };
+    return { ok: false, status: 0, html: "" };
   }
 
   await chrome.declarativeNetRequest.updateSessionRules({

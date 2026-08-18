@@ -248,34 +248,24 @@ span.avatar {
   letter-spacing: 0.02em;
 }
 
-.notification-mention > a:hover {
-  background: var(--mention-bg);
+li > a > .action strong {
+  color: var(--accent);
 }
 
-.notification-mention .type-tag {
-  background: var(--mention-bg);
-  color: var(--mention);
-}
-
-.notification-mention .action strong {
-  color: var(--mention);
-}
-
-.notification-groupChange > a:hover {
+li > a:hover {
   background: var(--group-bg);
 }
 
-.notification-groupChange .type-tag {
+li > a > .type-tag {
   background: var(--group-bg);
-  color: var(--group);
+  color: var(--accent);
 }
 
 [class^="group-"] {
   display: inline-block;
   padding: 0 6px;
   border-radius: 999px;
-  background: var(--group-bg);
-  color: var(--group);
+  color: var(--accent);
   font-size: 12px;
   font-weight: 700;
 }

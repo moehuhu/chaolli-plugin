@@ -1,6 +1,47 @@
-<html>
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>超理论坛通知</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
   <body>
-    <h1>Chaoli Helper</h1>
-    <p>This is a tool that helps you to visit the Chaoli forum and get the information you need.</p>
+    <header class="header">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">超</span>
+        <div>
+          <h1>超理论坛通知</h1>
+          <p class="subtitle">使用当前浏览器登录状态</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="refresh-btn" class="icon-btn" type="button" title="刷新">
+          刷新
+        </button>
+        <a
+          class="icon-btn"
+          href="https://chaoli.club/index.php/?p=settings/notifications"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="在论坛中打开"
+        >
+          打开
+        </a>
+      </div>
+    </header>
+
+    <main id="app" class="app">
+      <div id="status" class="status" hidden></div>
+      <div id="content" class="content">
+        <div class="skeleton" aria-hidden="true">
+          <div class="skeleton-row"></div>
+          <div class="skeleton-row"></div>
+          <div class="skeleton-row"></div>
+        </div>
+      </div>
+    </main>
+
+    <script src="popup.js"></script>
   </body>
 </html>

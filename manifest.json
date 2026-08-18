@@ -1,10 +1,22 @@
 {
-    "name": "Chaoli Helper",
-    "description": "超理论坛助手",
-    "version": "1.0",
-    "manifest_version": 3,
-    "action": {
-      "default_popup": "index.html",
-      "default_icon": "chaoli.png"
-    }
-  }
+  "name": "Chaoli Helper",
+  "description": "使用已登录的超理论坛账号，在弹出窗口中查看通知",
+  "version": "1.0",
+  "manifest_version": 3,
+  "action": {
+    "default_popup": "index.html",
+    "default_title": "超理论坛通知",
+    "default_icon": "chaoli.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "host_permissions": [
+    "https://chaoli.club/*",
+    "https://www.chaoli.club/*"
+  ],
+  "permissions": [
+    "scripting",
+    "tabs"
+  ]
+}

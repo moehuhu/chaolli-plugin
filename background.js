@@ -1,6 +1,10 @@
 const NOTIFICATIONS_PATH = "/index.php/?p=settings/notifications.view/1";
+const NOTIFICATION_CHECK_PATH = "/index.php/?p=settings/notificationCheck.ajax";
 const NOTIFICATIONS_URL = `https://chaoli.club${NOTIFICATIONS_PATH}`;
+const NOTIFICATION_CHECK_URL = `https://chaoli.club${NOTIFICATION_CHECK_PATH}`;
 const COOKIE_RULE_ID = 1001;
+const CHECK_ALARM_NAME = "notificationCheck";
+const CHECK_INTERVAL_MINUTES = 1;
 
 function waitForTabComplete(tabId, timeoutMs = 20000) {
   return new Promise((resolve, reject) => {
@@ -51,7 +55,7 @@ function isUsableResult(result) {
   return true;
 }
 
-async function fetchFromTab(tab) {
+async function fetchFromTab(tab, path = NOTIFICATIONS_PATH) {
   if (tab.discarded) {
     await chrome.tabs.reload(tab.id);
     await waitForTabComplete(tab.id);
@@ -61,8 +65,8 @@ async function fetchFromTab(tab) {
 
   const [injection] = await chrome.scripting.executeScript({
     target: { tabId: tab.id },
-    func: async (path) => {
-      const response = await fetch(`${location.origin}${path}`, {
+    func: async (requestPath) => {
+      const response = await fetch(`${location.origin}${requestPath}`, {
         method: "GET",
         credentials: "include",
         cache: "no-store"
@@ -74,7 +78,7 @@ async function fetchFromTab(tab) {
         html: await response.text()
       };
     },
-    args: [NOTIFICATIONS_PATH]
+    args: [path]
   });
 
   if (!injection || injection.result == null) {
@@ -123,52 +127,63 @@ async function buildCookieHeader() {
   return cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join("; ");
 }
 
-async function fetchWithStoredCookies() {
-  const cookieHeader = await buildCookieHeader();
-  if (!cookieHeader) {
-    return { ok: false, status: 0, html: "" };
-  }
+let cookieFetchQueue = Promise.resolve();
 
-  await chrome.declarativeNetRequest.updateSessionRules({
-    removeRuleIds: [COOKIE_RULE_ID],
-    addRules: [
-      {
-        id: COOKIE_RULE_ID,
-        priority: 1,
-        action: {
-          type: "modifyHeaders",
-          requestHeaders: [
-            { header: "Cookie", operation: "set", value: cookieHeader },
-            { header: "Referer", operation: "set", value: "https://chaoli.club/" }
-          ]
-        },
-        condition: {
-          initiatorDomains: [chrome.runtime.id],
-          requestDomains: ["chaoli.club", "www.chaoli.club"],
-          resourceTypes: ["xmlhttprequest", "other"]
-        }
-      }
-    ]
-  });
+async function fetchWithStoredCookies(url = NOTIFICATIONS_URL) {
+  const run = async () => {
+    const cookieHeader = await buildCookieHeader();
+    if (!cookieHeader) {
+      return { ok: false, status: 0, html: "" };
+    }
 
-  try {
-    const response = await fetch(NOTIFICATIONS_URL, {
-      method: "GET",
-      credentials: "omit",
-      cache: "no-store",
-      redirect: "follow"
-    });
-    return {
-      ok: response.ok,
-      status: response.status,
-      url: response.url,
-      html: await response.text()
-    };
-  } finally {
     await chrome.declarativeNetRequest.updateSessionRules({
-      removeRuleIds: [COOKIE_RULE_ID]
+      removeRuleIds: [COOKIE_RULE_ID],
+      addRules: [
+        {
+          id: COOKIE_RULE_ID,
+          priority: 1,
+          action: {
+            type: "modifyHeaders",
+            requestHeaders: [
+              { header: "Cookie", operation: "set", value: cookieHeader },
+              { header: "Referer", operation: "set", value: "https://chaoli.club/" }
+            ]
+          },
+          condition: {
+            initiatorDomains: [chrome.runtime.id],
+            requestDomains: ["chaoli.club", "www.chaoli.club"],
+            resourceTypes: ["xmlhttprequest", "other"]
+          }
+        }
+      ]
     });
-  }
+
+    try {
+      const response = await fetch(url, {
+        method: "GET",
+        credentials: "omit",
+        cache: "no-store",
+        redirect: "follow"
+      });
+      return {
+        ok: response.ok,
+        status: response.status,
+        url: response.url,
+        html: await response.text()
+      };
+    } finally {
+      await chrome.declarativeNetRequest.updateSessionRules({
+        removeRuleIds: [COOKIE_RULE_ID]
+      });
+    }
+  };
+
+  const pending = cookieFetchQueue.then(run, run);
+  cookieFetchQueue = pending.then(
+    () => {},
+    () => {}
+  );
+  return pending;
 }
 
 async function fetchFromHiddenTab() {
@@ -178,7 +193,7 @@ async function fetchFromHiddenTab() {
   });
   try {
     await waitForTabComplete(tab.id);
-    return await fetchFromTab(tab);
+    return await fetchFromTab(tab, NOTIFICATIONS_PATH);
   } finally {
     try {
       if (tab.id) await chrome.tabs.remove(tab.id);
@@ -191,12 +206,12 @@ async function fetchFromHiddenTab() {
 async function fetchNotifications() {
   const existingTab = await findChaoliTab();
   if (existingTab) {
-    const fromTab = await fetchFromTab(existingTab);
+    const fromTab = await fetchFromTab(existingTab, NOTIFICATIONS_PATH);
     if (isUsableResult(fromTab)) return fromTab;
   }
 
   try {
-    const fromCookies = await fetchWithStoredCookies();
+    const fromCookies = await fetchWithStoredCookies(NOTIFICATIONS_URL);
     if (isUsableResult(fromCookies)) return fromCookies;
   } catch {
     // Fall through to a hidden tab.
@@ -205,13 +220,113 @@ async function fetchNotifications() {
   return await fetchFromHiddenTab();
 }
 
+function parseNotificationCheck(result) {
+  const text = (result?.html || "").trim();
+  if (!text) return null;
+  if (/sorry, you have been blocked/i.test(text)) return null;
+  if (text.startsWith("<") || /name=["']username["']/i.test(text)) return null;
+  try {
+    const data = JSON.parse(text);
+    const count = Number(data?.count);
+    if (!Number.isFinite(count)) return null;
+    data.count = count;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchNotificationCheck() {
+  const existingTab = await findChaoliTab();
+  if (existingTab) {
+    try {
+      const fromTab = await fetchFromTab(existingTab, NOTIFICATION_CHECK_PATH);
+      const data = parseNotificationCheck(fromTab);
+      if (data) return data;
+    } catch {
+      // Fall through to cookie-based fetch.
+    }
+  }
+
+  try {
+    const fromCookies = await fetchWithStoredCookies(NOTIFICATION_CHECK_URL);
+    return parseNotificationCheck(fromCookies);
+  } catch {
+    return null;
+  }
+}
+
+function badgeTextForCount(count) {
+  if (!count || count <= 0) return "";
+  return count > 99 ? "99+" : String(count);
+}
+
+async function updateBadge(count) {
+  const text = badgeTextForCount(count);
+  await chrome.action.setBadgeText({ text });
+  if (text) {
+    await chrome.action.setBadgeBackgroundColor({ color: "#d93025" });
+    if (chrome.action.setBadgeTextColor) {
+      await chrome.action.setBadgeTextColor({ color: "#ffffff" });
+    }
+  }
+}
+
+async function pollNotificationCount() {
+  try {
+    const data = await fetchNotificationCheck();
+    if (!data) return;
+    if (!data.userId) {
+      await updateBadge(0);
+      return;
+    }
+    await updateBadge(data.count);
+  } catch {
+    // Keep the last badge on transient failures.
+  }
+}
+
+async function ensureCheckAlarm() {
+  const existing = await chrome.alarms.get(CHECK_ALARM_NAME);
+  if (!existing) {
+    await chrome.alarms.create(CHECK_ALARM_NAME, {
+      periodInMinutes: CHECK_INTERVAL_MINUTES
+    });
+  }
+}
+
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.alarms.create(CHECK_ALARM_NAME, {
+    periodInMinutes: CHECK_INTERVAL_MINUTES
+  });
+  pollNotificationCount();
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  chrome.alarms.create(CHECK_ALARM_NAME, {
+    periodInMinutes: CHECK_INTERVAL_MINUTES
+  });
+  pollNotificationCount();
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === CHECK_ALARM_NAME) {
+    pollNotificationCount();
+  }
+});
+
+ensureCheckAlarm();
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== "FETCH_NOTIFICATIONS") {
     return;
   }
 
   fetchNotifications()
-    .then(sendResponse)
+    .then((result) => {
+      sendResponse(result);
+      pollNotificationCount();
+    })
     .catch((error) => {
       sendResponse({
         ok: false,

@@ -19,7 +19,10 @@ const LOGGED_OUT_BADGE = {
   title: "超理论坛通知（未登录）"
 };
 
-const BLOCKED_PATTERN = /sorry, you have been blocked/i;
+// Cloudflare interstitials are a real failure; everything else that fails to
+// identify a member just means "not signed in".
+const BLOCKED_PATTERN =
+  /sorry, you have been blocked|cf-error-details|cloudflare ray id|cf_chl_/i;
 const LOGIN_URL_PATTERN = /user\/login|user\/join/i;
 
 function looksLikeLoginPage(html) {
@@ -30,11 +33,16 @@ function looksLikeLoginPage(html) {
 
 function classify(response, body) {
   if (BLOCKED_PATTERN.test(body)) return { ok: false, error: "BLOCKED" };
+  // The forum answers unauthenticated API calls with 401/403.
+  if (response.status === 401 || response.status === 403) {
+    return { ok: false, error: "LOGIN" };
+  }
   if (!response.ok) return { ok: false, error: `HTTP_${response.status}` };
   if (LOGIN_URL_PATTERN.test(response.url) || looksLikeLoginPage(body)) {
     return { ok: false, error: "LOGIN" };
   }
-  if (!body.trim()) return { ok: false, error: "FETCH_FAILED" };
+  // A guest gets no payload at all from the AJAX endpoints.
+  if (!body.trim()) return { ok: false, error: "LOGIN" };
   return { ok: true, html: body, url: response.url };
 }
 
@@ -109,17 +117,27 @@ const UNKNOWN = "unknown";
 const LOGGED_OUT = "loggedOut";
 
 async function fetchNotificationState() {
+  let result;
   try {
-    const result = await fetchSite(NOTIFICATION_CHECK_URL);
-    if (!result.ok) return result.error === "LOGIN" ? LOGGED_OUT : UNKNOWN;
-
-    const data = JSON.parse(result.html);
-    if (!data?.userId) return LOGGED_OUT;
-    const count = Number(data.count);
-    return Number.isFinite(count) ? count : UNKNOWN;
+    result = await fetchSite(NOTIFICATION_CHECK_URL);
   } catch {
+    // Network error, or cookies could not be read.
     return UNKNOWN;
   }
+
+  if (!result.ok) return result.error === "LOGIN" ? LOGGED_OUT : UNKNOWN;
+
+  let data;
+  try {
+    data = JSON.parse(result.html);
+  } catch {
+    // A JSON endpoint that answers with HTML has not recognised a member.
+    return LOGGED_OUT;
+  }
+
+  if (!data?.userId) return LOGGED_OUT;
+  const count = Number(data.count);
+  return Number.isFinite(count) ? count : UNKNOWN;
 }
 
 function countBadge(count) {

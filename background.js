@@ -5,6 +5,20 @@ const COOKIE_RULE_ID = 1001;
 const CHECK_ALARM_NAME = "notificationCheck";
 const CHECK_INTERVAL_MINUTES = 1;
 
+const RED = "#d93025";
+const BLUE = "#1a73e8";
+
+const ERROR_BADGE = {
+  text: "!",
+  color: RED,
+  title: "超理论坛通知（读取失败，点击重试）"
+};
+const LOGGED_OUT_BADGE = {
+  text: "!",
+  color: BLUE,
+  title: "超理论坛通知（未登录）"
+};
+
 const BLOCKED_PATTERN = /sorry, you have been blocked/i;
 const LOGIN_URL_PATTERN = /user\/login|user\/join/i;
 
@@ -90,35 +104,48 @@ function fetchSite(url) {
   });
 }
 
-// null means "unknown" (keep the current badge); a number is authoritative.
-async function fetchNotificationCount() {
+// Resolves to a notification count, or one of these two states.
+const UNKNOWN = "unknown";
+const LOGGED_OUT = "loggedOut";
+
+async function fetchNotificationState() {
   try {
     const result = await fetchSite(NOTIFICATION_CHECK_URL);
-    if (!result.ok) return result.error === "LOGIN" ? 0 : null;
+    if (!result.ok) return result.error === "LOGIN" ? LOGGED_OUT : UNKNOWN;
 
     const data = JSON.parse(result.html);
-    if (!data?.userId) return 0;
+    if (!data?.userId) return LOGGED_OUT;
     const count = Number(data.count);
-    return Number.isFinite(count) ? count : null;
+    return Number.isFinite(count) ? count : UNKNOWN;
   } catch {
-    return null;
+    return UNKNOWN;
   }
 }
 
-async function updateBadge(count) {
-  const text = count > 0 ? (count > 99 ? "99+" : String(count)) : "";
+function countBadge(count) {
+  return {
+    text: count > 0 ? (count > 99 ? "99+" : String(count)) : "",
+    color: RED,
+    title: "超理论坛通知"
+  };
+}
+
+async function setBadge({ text, color, title }) {
   await chrome.action.setBadgeText({ text });
+  await chrome.action.setTitle({ title });
   if (!text) return;
 
-  await chrome.action.setBadgeBackgroundColor({ color: "#d93025" });
+  await chrome.action.setBadgeBackgroundColor({ color });
   if (chrome.action.setBadgeTextColor) {
     await chrome.action.setBadgeTextColor({ color: "#ffffff" });
   }
 }
 
 async function pollNotificationCount() {
-  const count = await fetchNotificationCount();
-  if (count !== null) await updateBadge(count);
+  const state = await fetchNotificationState();
+  if (state === UNKNOWN) return setBadge(ERROR_BADGE);
+  if (state === LOGGED_OUT) return setBadge(LOGGED_OUT_BADGE);
+  return setBadge(countBadge(state));
 }
 
 chrome.alarms.onAlarm.addListener((alarm) => {

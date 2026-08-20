@@ -1,6 +1,6 @@
 const ORIGIN = "https://chaoli.club";
 const NOTIFICATIONS_URL = `${ORIGIN}/index.php/settings/notifications.json/1`;
-const NOTIFICATION_CHECK_URL = `${ORIGIN}/index.php/?p=settings/notificationCheck.ajax`;
+const NOTIFICATION_CHECK_URL = `${ORIGIN}/index.php/settings/notificationCheck.ajax`;
 const COOKIE_RULE_ID = 1001;
 const CHECK_ALARM_NAME = "notificationCheck";
 const CHECK_INTERVAL_MINUTES = 1;

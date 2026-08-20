@@ -177,7 +177,7 @@ function showError(code) {
       element(
         "p",
         "empty",
-        "也可以点击扩展图标旁的「网站访问权限」，选择「在 chaoli.club 上」或「在所有网站上」。"
+        "也可以在扩展的网站访问权限设置中，允许访问 chaoli.club。"
       )
     );
     return;

@@ -3,12 +3,23 @@
   "description": "使用已登录的超理论坛账号，在弹出窗口中查看通知",
   "version": "0.3.0",
   "manifest_version": 3,
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "chaoli-helper@chaoli.club",
+      "strict_min_version": "128.0"
+    }
+  },
+  "icons": {
+    "48": "chaoli.png",
+    "128": "chaoli.png"
+  },
   "action": {
     "default_popup": "index.html",
     "default_title": "超理论坛通知",
     "default_icon": "chaoli.png"
   },
   "background": {
+    "scripts": ["background.js"],
     "service_worker": "background.js"
   },
   "host_permissions": [

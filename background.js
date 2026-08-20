@@ -51,6 +51,12 @@ async function buildCookieHeader(url) {
   return cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join("; ");
 }
 
+// Chrome uses the extension ID as the initiator host; Firefox uses the
+// per-install moz-extension UUID. runtime.getURL() yields the right host in both.
+function extensionInitiatorHost() {
+  return new URL(chrome.runtime.getURL("/")).hostname;
+}
+
 async function withCookieRule(cookieHeader, task) {
   await chrome.declarativeNetRequest.updateSessionRules({
     removeRuleIds: [COOKIE_RULE_ID],
@@ -66,7 +72,7 @@ async function withCookieRule(cookieHeader, task) {
           ]
         },
         condition: {
-          initiatorDomains: [chrome.runtime.id],
+          initiatorDomains: [extensionInitiatorHost()],
           requestDomains: ["chaoli.club", "www.chaoli.club"],
           resourceTypes: ["xmlhttprequest", "other"]
         }

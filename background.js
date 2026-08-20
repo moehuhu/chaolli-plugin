@@ -1,5 +1,5 @@
 const ORIGIN = "https://chaoli.club";
-const NOTIFICATIONS_URL = `${ORIGIN}/index.php/?p=settings/notifications.view/1`;
+const NOTIFICATIONS_URL = `${ORIGIN}/index.php/settings/notifications.json/1`;
 const NOTIFICATION_CHECK_URL = `${ORIGIN}/index.php/?p=settings/notificationCheck.ajax`;
 const COOKIE_RULE_ID = 1001;
 const CHECK_ALARM_NAME = "notificationCheck";
@@ -43,7 +43,7 @@ function classify(response, body) {
   }
   // A guest gets no payload at all from the AJAX endpoints.
   if (!body.trim()) return { ok: false, error: "LOGIN" };
-  return { ok: true, html: body, url: response.url };
+  return { ok: true, body, url: response.url };
 }
 
 async function buildCookieHeader(url) {
@@ -129,7 +129,7 @@ async function fetchNotificationState() {
 
   let data;
   try {
-    data = JSON.parse(result.html);
+    data = JSON.parse(result.body);
   } catch {
     // A JSON endpoint that answers with HTML has not recognised a member.
     return LOGGED_OUT;

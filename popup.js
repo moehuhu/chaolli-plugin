@@ -1,10 +1,11 @@
 const ORIGIN = "https://chaoli.club";
 const SITE_ORIGINS = ["*://chaoli.club/*", "*://*.chaoli.club/*"];
+const ALL_NOTIFICATIONS_URL = `${ORIGIN}/index.php/settings/notifications`;
 
 const TYPE_LABELS = {
-  "notification-post": "关注更新",
-  "notification-mention": "提及",
-  "notification-groupChange": "用户组"
+  post: "关注更新",
+  mention: "提及",
+  groupChange: "用户组"
 };
 
 const SKELETON = `
@@ -13,12 +14,6 @@ const SKELETON = `
     <div class="skeleton-row"></div>
     <div class="skeleton-row"></div>
   </div>
-`;
-
-const LOGIN_PROMPT = `
-  <p class="empty">
-    <a href="${ORIGIN}/" target="_blank" rel="noopener noreferrer">前往登录超理论坛</a>
-  </p>
 `;
 
 const statusEl = document.getElementById("status");
@@ -31,44 +26,42 @@ function showStatus(message, type = "error") {
   statusEl.classList.toggle("info", type === "info");
 }
 
-function absolutize(url) {
-  const value = (url || "").trim();
-  if (!value) return url;
-  if (
-    /^(https?:|data:|blob:|mailto:|chrome-extension:)/i.test(value) ||
-    value.startsWith("#")
-  ) {
-    return value;
-  }
-  if (value.startsWith("//")) return `https:${value}`;
+function element(tag, className, text) {
+  const el = document.createElement(tag);
+  if (className) el.className = className;
+  if (text != null) el.textContent = text;
+  return el;
+}
+
+// Only used for notification types we have no template for; keeps the server's
+// markup out of the DOM while still showing its wording.
+function plainText(html) {
+  if (!html) return "";
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  doc.body.querySelectorAll("script, style, template").forEach((el) => el.remove());
+  return doc.body.textContent.replace(/\s+/g, " ").trim();
+}
+
+function siteUrl(path, fallback) {
   try {
-    return new URL(value, `${ORIGIN}/`).toString();
+    const url = new URL(path, `${ORIGIN}/`);
+    return url.origin === ORIGIN ? url.toString() : fallback;
   } catch {
-    return value;
+    return fallback;
   }
 }
 
-function sanitize(doc) {
-  doc
-    .querySelectorAll("script, iframe, object, embed, link, meta, style")
-    .forEach((el) => el.remove());
+function relativeTime(value) {
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds) || seconds <= 0) return "";
 
-  for (const el of doc.querySelectorAll("*")) {
-    for (const attr of [...el.attributes]) {
-      const name = attr.name.toLowerCase();
-      if (name.startsWith("on")) {
-        el.removeAttribute(attr.name);
-      } else if (name === "href" || name === "src") {
-        if (/^\s*javascript:/i.test(attr.value)) el.removeAttribute(attr.name);
-        else el.setAttribute(attr.name, absolutize(attr.value));
-      }
-    }
-  }
+  const diff = Date.now() / 1000 - seconds;
+  if (diff < 60) return "刚刚";
+  if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)} 小时前`;
+  if (diff < 30 * 86400) return `${Math.floor(diff / 86400)} 天前`;
 
-  doc.querySelectorAll("a").forEach((a) => {
-    a.setAttribute("target", "_blank");
-    a.setAttribute("rel", "noopener noreferrer");
-  });
+  return new Date(seconds * 1000).toLocaleDateString("zh-CN");
 }
 
 function hashHue(text) {
@@ -79,54 +72,84 @@ function hashHue(text) {
   return hash;
 }
 
-function decorate(item) {
-  item.querySelectorAll("i.fa").forEach((icon) => icon.remove());
-
-  const typeClass = [...item.classList].find((name) => TYPE_LABELS[name]);
-  const time = item.querySelector("small.time");
-  if (typeClass && time && !time.querySelector(".type-tag")) {
-    const tag = document.createElement("span");
-    tag.className = "type-tag";
-    tag.textContent = TYPE_LABELS[typeClass];
-    time.prepend(tag);
-  }
-
-  const letterAvatar = item.querySelector("span.avatar");
-  if (letterAvatar && !letterAvatar.style.background) {
-    const hue = hashHue(letterAvatar.textContent.trim() || "超");
-    letterAvatar.style.background = `hsl(${hue} 36% 46%)`;
-  }
+function letterAvatar(name) {
+  const span = element("span", "avatar", [...name][0] || "超");
+  span.style.background = `hsl(${hashHue(name)} 36% 46%)`;
+  return span;
 }
 
-// Returns the nodes to display, or null when the response holds no notifications.
-function render(html) {
-  const doc = new DOMParser().parseFromString(html, "text/html");
-  sanitize(doc);
+function avatar(item, name) {
+  const fallback = letterAvatar(name);
+  if (!item.avatarFormat || !item.fromMemberId) return fallback;
 
-  const root =
-    doc.querySelector(".notificationsList, ul.list, #body-content") || doc.body;
-  const items = [...root.querySelectorAll("li")];
-  if (!items.length) {
-    return root.innerHTML.trim() ? [...root.childNodes] : null;
+  const img = element("img", "avatar");
+  img.src = `${ORIGIN}/uploads/avatars/avatar_${item.fromMemberId}.${item.avatarFormat}`;
+  img.alt = name;
+  img.loading = "lazy";
+  img.addEventListener("error", () => img.replaceWith(fallback), { once: true });
+  return img;
+}
+
+function actionContent(item, name) {
+  const title = item.data?.title;
+  if (!title) return [plainText(item.body) || name];
+
+  if (item.type === "post") {
+    return [`${name} 更新于 `, element("strong", null, title)];
   }
-
-  const list = document.createElement("ul");
-  list.className = "notification-list";
-  const nodes = [list];
-
-  for (const item of items) {
-    if (item.id === "viewAllNotifications") {
-      const footer = document.createElement("div");
-      footer.id = "viewAllNotifications";
-      footer.append(...item.childNodes);
-      nodes.push(footer);
-      continue;
-    }
-    decorate(item);
-    list.appendChild(item);
+  if (item.type === "mention") {
+    return [`${name} 在 `, element("strong", null, title), " 中提到了你"];
   }
+  return [plainText(item.body) || `${name} · ${title}`];
+}
 
-  return nodes;
+function notificationRow(item) {
+  const name = (item.fromMemberName || "").trim() || "某位用户";
+
+  const time = element("small", "time");
+  if (TYPE_LABELS[item.type]) {
+    time.append(element("span", "type-tag", TYPE_LABELS[item.type]));
+  }
+  time.append(relativeTime(item.time));
+
+  const action = element("span", "action");
+  action.append(...actionContent(item, name));
+
+  const link = element("a");
+  link.href = siteUrl(item.link, ALL_NOTIFICATIONS_URL);
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  link.append(avatar(item, name), action, time);
+
+  const row = element("li", `notification-${item.type || "other"}`);
+  if (item.unread) row.classList.add("unread");
+  row.append(link);
+  return row;
+}
+
+function viewAllFooter() {
+  const link = element("a", null, "查看全部通知");
+  link.href = ALL_NOTIFICATIONS_URL;
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+
+  const footer = element("div");
+  footer.id = "viewAllNotifications";
+  footer.append(link);
+  return footer;
+}
+
+// Returns the nodes to display, or null when the payload is not the expected shape.
+function render(payload) {
+  const results = payload?.results;
+  if (!Array.isArray(results)) return null;
+  if (!results.length) return [];
+
+  const list = element("ul", "notification-list");
+  for (const item of results) {
+    list.append(notificationRow(item));
+  }
+  return [list, viewAllFooter()];
 }
 
 async function ensureSiteAccess(canPrompt) {
@@ -150,17 +173,25 @@ const ERROR_MESSAGES = {
 function showError(code) {
   if (code === "PERMISSION") {
     showStatus("需要允许扩展访问 chaoli.club，才能读取登录 cookie。点击「刷新」授权。");
-    contentEl.innerHTML = `
-      <p class="empty">
-        也可以点击扩展图标旁的「网站访问权限」，选择「在 chaoli.club 上」或「在所有网站上」。
-      </p>
-    `;
+    contentEl.replaceChildren(
+      element(
+        "p",
+        "empty",
+        "也可以点击扩展图标旁的「网站访问权限」，选择「在 chaoli.club 上」或「在所有网站上」。"
+      )
+    );
     return;
   }
 
   if (code === "LOGIN") {
     showStatus(ERROR_MESSAGES.LOGIN);
-    contentEl.innerHTML = LOGIN_PROMPT;
+    const link = element("a", null, "前往登录超理论坛");
+    link.href = `${ORIGIN}/`;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    const empty = element("p", "empty");
+    empty.append(link);
+    contentEl.replaceChildren(empty);
     return;
   }
 
@@ -171,7 +202,7 @@ function showError(code) {
   } else {
     showStatus("读取通知失败，请确认已登录并可以访问 chaoli.club。");
   }
-  contentEl.innerHTML = `<p class="empty">无法显示通知内容。</p>`;
+  contentEl.replaceChildren(element("p", "empty", "无法显示通知内容。"));
 }
 
 async function loadNotifications({ canPrompt = false } = {}) {
@@ -196,9 +227,22 @@ async function loadNotifications({ canPrompt = false } = {}) {
     return;
   }
 
-  const nodes = render(result.html || "");
-  if (!nodes) {
-    contentEl.innerHTML = `<p class="empty">暂时没有通知。</p>`;
+  let payload;
+  try {
+    payload = JSON.parse(result.body);
+  } catch {
+    // The JSON endpoint served something else, which means we are not signed in.
+    showError("LOGIN");
+    return;
+  }
+
+  const nodes = render(payload);
+  if (nodes === null) {
+    showError("FETCH_FAILED");
+    return;
+  }
+  if (!nodes.length) {
+    contentEl.replaceChildren(element("p", "empty", "暂时没有通知。"));
     return;
   }
   contentEl.replaceChildren(...nodes);

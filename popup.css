@@ -185,6 +185,15 @@ h1 {
   background: #f6fafc;
 }
 
+.notification-list > li.unread > a {
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.notification-list > li.unread .action {
+  font-weight: 600;
+}
+
 .avatar,
 img.avatar,
 span.avatar {

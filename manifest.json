@@ -1,14 +1,16 @@
 {
   "name": "Chaoli Helper",
   "description": "使用已登录的超理论坛账号，在弹出窗口中查看通知",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "manifest_version": 3,
   "browser_specific_settings": {
     "gecko": {
       "id": "chaoli-helper@chaoli.club",
       "strict_min_version": "140.0",
       "data_collection_permissions": {
-        "required": ["none"]
+        "required": [
+          "none"
+        ]
       }
     }
   },
@@ -22,7 +24,9 @@
     "default_icon": "chaoli.png"
   },
   "background": {
-    "scripts": ["background.js"],
+    "scripts": [
+      "background.js"
+    ],
     "service_worker": "background.js"
   },
   "host_permissions": [

@@ -250,4 +250,16 @@ async function loadNotifications({ canPrompt = false } = {}) {
 
 refreshBtn.addEventListener("click", () => loadNotifications({ canPrompt: true }));
 
+// Opening a notification marks it read. The popup is torn down as soon as the new
+// tab takes focus, so the background worker owns the delayed re-check.
+function onContentActivate(event) {
+  if (!event.target?.closest?.("a")) return;
+  chrome.runtime.sendMessage({ type: "NOTIFICATION_OPENED" }).catch(() => {});
+}
+
+// "click" covers plain and ctrl/cmd-click; "auxclick" covers middle-click, which
+// opens a background tab and leaves the popup open.
+contentEl.addEventListener("click", onContentActivate);
+contentEl.addEventListener("auxclick", onContentActivate);
+
 loadNotifications();

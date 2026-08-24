@@ -176,7 +176,26 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === CHECK_ALARM_NAME) pollNotificationCount();
 });
 
+// Opening a notification marks it read server-side, but only once the target page
+// has loaded. Re-check twice so the badge catches up without waiting for the
+// next alarm. Both delays stay well inside the service worker's idle timeout.
+const RESYNC_DELAYS_MS = [3000, 10000];
+let resyncTimers = [];
+
+function scheduleResync() {
+  for (const timer of resyncTimers) clearTimeout(timer);
+  resyncTimers = RESYNC_DELAYS_MS.map((delay) =>
+    setTimeout(pollNotificationCount, delay)
+  );
+}
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === "NOTIFICATION_OPENED") {
+    scheduleResync();
+    sendResponse({ ok: true });
+    return;
+  }
+
   if (message?.type !== "FETCH_NOTIFICATIONS") return;
 
   fetchSite(NOTIFICATIONS_URL)

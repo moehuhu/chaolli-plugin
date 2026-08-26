@@ -6,11 +6,12 @@ const CHECK_ALARM_NAME = "notificationCheck";
 const CHECK_INTERVAL_MINUTES = 1;
 
 const RED = "#d93025";
+const ORANGE = "#ff9800";
 const BLUE = "#1a73e8";
 
 const ERROR_BADGE = {
   text: "!",
-  color: RED,
+  color: ORANGE,
   title: "超理论坛通知（读取失败，点击重试）"
 };
 const LOGGED_OUT_BADGE = {
@@ -95,8 +96,8 @@ let requestQueue = Promise.resolve();
 function serialize(task) {
   const pending = requestQueue.then(task, task);
   requestQueue = pending.then(
-    () => {},
-    () => {}
+    () => { },
+    () => { }
   );
   return pending;
 }
